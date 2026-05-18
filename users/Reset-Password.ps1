@@ -1,4 +1,4 @@
-mport-Module ActiveDirectory
+Import-Module ActiveDirectory
 
 # =========================
 # SENHA
