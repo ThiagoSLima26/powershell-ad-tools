@@ -1,1 +1,99 @@
+Create-ADUser.ps1
+<#
+.SYNOPSIS
+    Cria um novo utilizador no Active Directory e adiciona-o a um ou mais grupos.
+.DESCRIPTION
+    Este script cria uma conta de utilizador com parâmetros básicos (Nome, Sobrenome, 
+    Username, Password, OU) e associa esta conta a uma lista de grupos especificada.
+.EXAMPLE
+    .\New-ADUserAndGroupAssociation.ps1 -Nome "Jose" -Sobrenome "Silva" -SamAccountName "jose.silva" -UserPrincipalName "jose.silva@dominio.local" -PathOU "OU=Utilizadores,DC=dominio,DC=local" -Grupos "Grupo_TI", "Grupo_Lojas"
+#>
 
+Import-Module ActiveDirectory
+
+Param(
+    [Parameter(Mandatory=$true)]
+    [string]$Nome,
+
+    [Parameter(Mandatory=$true)]
+    [string]$Sobrenome,
+
+    [Parameter(Mandatory=$true)]
+    [string]$SamAccountName,
+
+    [Parameter(Mandatory=$true)]
+    [string]$UserPrincipalName,
+
+    [Parameter(Mandatory=$true)]
+    [string]$PathOU,
+
+    # Aceita um grupo único ou uma lista de grupos separados por vírgula
+    [Parameter(Mandatory=$true)]
+    [string[]]$Grupos,
+
+    [Parameter(Mandatory=$false)]
+    [string]$SenhaPadrao = "Mudar123!"
+)
+
+# 1. Preparar dados do utilizador
+$displayName = "$Nome $Sobrenome"
+$securePassword = ConvertTo-SecureString $SenhaPadrao -AsPlainText -Force
+
+try {
+    # 2. Verificar se o utilizador já existe no AD
+    Write-Host "A verificar existencia do utilizador '$SamAccountName'..." -ForegroundColor Cyan
+    $userExists = Get-ADUser -Filter "SamAccountName -eq '$SamAccountName'" -ErrorAction SilentlyContinue
+
+    if ($userExists) {
+        Write-Host "Aviso: O utilizador '$SamAccountName' ja existe no Active Directory. A prosseguir apenas para associacao de grupos." -ForegroundColor Yellow
+        $adUser = $userExists
+    }
+    else {
+        # 3. Criar o utilizador ativo com a password predefinida
+        Write-Host "A criar o utilizador '$displayName' na OU: $PathOU..." -ForegroundColor Cyan
+        
+        $userParams = @{
+            Name                  = $displayName
+            GivenName             = $Nome
+            Surname               = $Sobrenome
+            SamAccountName        = $SamAccountName
+            UserPrincipalName     = $UserPrincipalName
+            Path                  = $PathOU
+            AccountPassword       = $securePassword
+            Enabled               = $true
+            ChangePasswordAtLogon = $true
+            PassThru              = $true
+            ErrorAction           = "Stop"
+        }
+
+        $adUser = New-ADUser @userParams
+        Write-Host "Sucesso: Utilizador '$SamAccountName' criado com sucesso!" -ForegroundColor Green
+    }
+
+    # 4. Associar aos grupos fornecidos
+    foreach ($grupoNome in $Grupos) {
+        try {
+            # Verificar se o grupo existe
+            $grupo = Get-ADGroup -Identity $grupoNome -ErrorAction Stop
+
+            # Verificar se o utilizador já pertence ao grupo
+            $jaMembro = Get-ADGroupMember -Identity $grupoNome -Recursive -ErrorAction Stop |
+                        Where-Object { $_.DistinguishedName -eq $adUser.DistinguishedName }
+
+            if (-not $jaMembro) {
+                Add-ADGroupMember -Identity $grupoNome -Members $adUser -ErrorAction Stop
+                Write-Host "Sucesso: Utilizador adicionado ao grupo '$grupoNome'." -ForegroundColor Green
+            }
+            else {
+                Write-Host "Aviso: O utilizador ja pertence ao grupo '$grupoNome'." -ForegroundColor Cyan
+            }
+        }
+        catch {
+            Write-Host "Erro: Nao foi possivel processar o grupo '$grupoNome'. Detalhes: $_" -ForegroundColor Red
+        }
+    }
+
+}
+catch {
+    Write-Host "Erro Critico: Falha ao criar o utilizador '$SamAccountName'. Detalhes: $_" -ForegroundColor Red
+}
