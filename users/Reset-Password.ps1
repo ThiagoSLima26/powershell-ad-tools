@@ -1,31 +1,57 @@
-# 1. Configurações de Senha
-$NovaSenhaTexto = "Senha" 
-$password = ConvertTo-SecureString $NovaSenhaTexto -AsPlainText -Force
+mport-Module ActiveDirectory
 
-# 2. Lista de usuários
-$usuarios = @(
-    "joao.silva", "alex.silva"
+# =========================
+# SENHA
+# =========================
+
+$NovaSenhaTexto = "Senha"
+$Password = ConvertTo-SecureString $NovaSenhaTexto -AsPlainText -Force
+
+# =========================
+# USUÁRIOS
+# =========================
+
+$Usuarios = @(
+    "alberto.moura",
+    "alex.lima1",
+    "alexcione.silva"
 )
 
-Write-Host "--- Iniciando Reset com Busca Global no Domínio ---" -ForegroundColor Cyan
+Write-Host "`n--- INICIANDO RESET DE SENHAS ---`n" -ForegroundColor Cyan
 
-foreach ($user in $usuarios) {
+foreach ($User in $Usuarios) {
+
     try {
-        # Busca o usuário em TODO o AD para não ter erro de OU
-        $adUser = Get-ADUser -Filter "SamAccountName -eq '$user'" -ErrorAction Stop
-        
-        # Mostra onde o usuário foi encontrado (DistinguishedName)
-        Write-Host "[LOCALIZADO] $user em: $($adUser.DistinguishedName)" -ForegroundColor Gray
-        
-        # Reseta a senha
-        Set-ADAccountPassword -Identity $adUser -NewPassword $password -Reset -ErrorAction Stop
-        Set-ADUser -Identity $adUser -ChangePasswordAtLogon $true -Enabled $true
-        
-        Write-Host "[OK] Senha atualizada para $user" -ForegroundColor Green
+
+        # Busca usuário no domínio
+        $ADUser = Get-ADUser -Identity $User -Properties Enabled -ErrorAction Stop
+
+        Write-Host "[LOCALIZADO] $($ADUser.SamAccountName)" -ForegroundColor Gray
+        Write-Host "OU: $($ADUser.DistinguishedName)" -ForegroundColor DarkGray
+
+        # Reset senha
+        Set-ADAccountPassword `
+            -Identity $ADUser `
+            -NewPassword $Password `
+            -Reset `
+            -ErrorAction Stop
+
+        # Habilita conta + força troca
+        Enable-ADAccount -Identity $ADUser
+
+        Set-ADUser `
+            -Identity $ADUser `
+            -ChangePasswordAtLogon $true
+
+        Write-Host "[OK] Senha redefinida com sucesso`n" -ForegroundColor Green
     }
+
     catch {
-        Write-Host "[ERRO CRÍTICO] O login '$user' não existe no AD inteiro. Verifique a grafia." -ForegroundColor Red
+
+        Write-Host "[ERRO] Usuário '$User' não encontrado ou erro no reset." -ForegroundColor Red
+        Write-Host $_.Exception.Message -ForegroundColor DarkRed
+        Write-Host ""
     }
 }
 
-Write-Host "--- Processo Finalizado ---" -ForegroundColor Cyan
+Write-Host "--- PROCESSO FINALIZADO ---" -ForegroundColor Cyan
